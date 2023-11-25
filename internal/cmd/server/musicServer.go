@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ type room struct {
 	song        string
 	connections map[int32]net.Conn
 	songFiles   []os.DirEntry
+	m3u8        []byte
 }
 
 var listeners map[int32]room // map[RoomID]map[personalID]{address}
@@ -116,6 +118,7 @@ func JoinRoom(c net.Conn, cmd Command) {
 		return
 	}
 	roomTemp.users[cmd.UserID] = fmt.Sprintf("%s", c.RemoteAddr().String())
+	c.Write(listeners[cmd.RoomID].m3u8)
 	listeners[cmd.RoomID] = roomTemp
 }
 
@@ -130,11 +133,19 @@ func CreateRoom(c net.Conn, cmd Command) {
 		log.Fatal(err)
 	}
 
+	m3u8, err := ioutil.ReadFile(fmt.Sprintf("./songs/" + cmd.Song + "/outputlist.m3u8")) // b has type []byte
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	listeners[cmd.RoomID] = room{
 		users:     usersC,
 		song:      cmd.Song,
 		songFiles: songFiles,
+		m3u8:      m3u8,
 	}
+
+	c.Write(listeners[cmd.RoomID].m3u8)
 }
 
 func StartStream(cmd Command) {
