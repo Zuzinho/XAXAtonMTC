@@ -1,29 +1,14 @@
 package main
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"log"
 	"net"
-)
-
-const (
-	PacketRequestSong = iota
-	PacketCoverArt
-	PacketCoverArtEnd
-	PacketMusicStreamSize
-	PacketMusicStream
-	PacketEndConnection
+	"net/http"
 )
 
 const PORT = ":3017"
-
-type Packet struct {
-	m_packetType uint32
-	m_dataSize   uint32
-	m_data       [256 - (4 * 2)]byte
-}
 
 type Command struct {
 	UserType string
@@ -50,11 +35,14 @@ func main() {
 	//PORT := ":" + arguments[1]
 
 	l, err := net.Listen("tcp4", PORT)
+	fmt.Println("start commands server on port", PORT)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer l.Close()
+
+	go musicServer()
 
 	for {
 		c, err := l.Accept()
@@ -99,34 +87,6 @@ func handleConnection(c net.Conn) {
 		}
 	}
 	c.Close()
-	
-	//// Main loop
-	//clientDisconnect := false
-	//for {
-	//
-	//	// Client sent a disconnect packet
-	//	if clientDisconnect {
-	//		break
-	//	}
-	//
-	//	// Wait for a packet from the client
-	//	var clientPacket Packet
-	//	if ReadPacket(c, &clientPacket) {
-	//		switch clientPacket.m_packetType {
-	//
-	//		case PacketRequestSong:
-	//			songRequested := string(clientPacket.m_data[0 : clientPacket.m_dataSize-1]) // Drop terminating '\n', hence the m_dataSize - 1
-	//			fmt.Println("Song req: ", songRequested)
-	//
-	//			SendCoverArt(c, songRequested)
-	//			SendMusic(c, songRequested)
-	//		case PacketEndConnection:
-	//			fmt.Println("Disconnect packet received")
-	//			clientDisconnect = true
-	//		}
-	//	}
-	//}
-
 }
 
 func LeaveRoom(cmd Command) {
@@ -142,9 +102,8 @@ func LeaveRoom(cmd Command) {
 		delete(roomTemp.connections, cmd.UserID)
 	}
 
-	// delete from room
+	// delete user from room
 	delete(roomTemp.users, cmd.UserID)
-
 	listeners[cmd.RoomID] = roomTemp
 }
 
@@ -207,130 +166,24 @@ func StopStream(cmd Command) {
 	//TODO stop stream first send to channel
 }
 
-func ReadPacket(conn net.Conn, packet *Packet) bool {
+func musicServer() {
+	// configure the songs directory name and port
+	const songsDir = "songs"
+	const port = 8080
 
-	buf := make([]byte, 256)
-	packetRead := false
-	// Read the incoming connection into the buffer
-	for {
-		packetLen, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println("Couldn't read packet")
-			break
-		}
+	// add a handler for the song files
+	http.Handle("/", addHeaders(http.FileServer(http.Dir(songsDir))))
+	fmt.Printf("Starting server on %v\n", port)
+	log.Printf("Serving %s on HTTP port: %v\n", songsDir, port)
 
-		if packetLen == 256 {
-			packetRead = true
-			break // All data from packet received
-		}
-	}
-
-	if packetRead {
-		// Read it back to the Packet data structure
-		packet.m_packetType = binary.LittleEndian.Uint32(buf[0:4])
-		packet.m_dataSize = binary.LittleEndian.Uint32(buf[4:8])
-		if packet.m_dataSize != 0 {
-			copy(packet.m_data[0:256-(4*2)], buf[8:256])
-		}
-	}
-
-	return packetRead
+	// serve and log errors
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))
 }
 
-func SendPacket(conn net.Conn, packet *Packet) {
-
-	// Transfer the content of the Packet to buf and transfer it over connection
-	buf := make([]byte, 256)
-	binary.LittleEndian.PutUint32(buf[0:], packet.m_packetType) // Packet type
-	binary.LittleEndian.PutUint32(buf[4:], packet.m_dataSize)   // Data size
-	copy(buf[8:256], packet.m_data[0:packet.m_dataSize])        // Data load
-
-	conn.Write(buf)
-}
-
-func SendCoverArt(conn net.Conn, songRequested string) {
-
-	// Open the song cover art request
-	var coverArtFileName string
-	coverArtFileName = "sfx/coverArt_" + songRequested
-	fmt.Println("Opening cover art: ", coverArtFileName)
-
-	coverArt, err := ioutil.ReadFile(coverArtFileName)
-	if err != nil {
-		fmt.Println("Couldn't open cover art, error: ", err.Error())
+// addHeaders will act as middleware to give us CORS support
+func addHeaders(h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		h.ServeHTTP(w, r)
 	}
-
-	var coverArtLen = uint32(len(coverArt))
-	var currentCoverArtPos uint32 = 0
-	var dataLoadMaxSize uint32 = 256 - (4 * 2)
-
-	for currentCoverArtPos < coverArtLen {
-		var dataSize = dataLoadMaxSize
-
-		if currentCoverArtPos+dataLoadMaxSize > coverArtLen {
-			dataSize = coverArtLen - currentCoverArtPos
-		}
-
-		var coverArtPack Packet
-		coverArtPack.m_packetType = PacketCoverArt
-		coverArtPack.m_dataSize = dataSize
-		copy(coverArtPack.m_data[0:coverArtPack.m_dataSize], coverArt[currentCoverArtPos:currentCoverArtPos+dataSize])
-		SendPacket(conn, &coverArtPack)
-		currentCoverArtPos += dataSize
-	}
-
-	var coverArtEndPack Packet
-	coverArtEndPack.m_packetType = PacketCoverArtEnd
-	coverArtEndPack.m_dataSize = 0
-	SendPacket(conn, &coverArtEndPack)
-}
-
-func SendMusic(conn net.Conn, songRequested string) {
-
-	musicFileName := "sfx/" + songRequested
-	musicContent, err := ioutil.ReadFile(musicFileName)
-	if err != nil {
-		fmt.Println("Couldn't read music file")
-	}
-
-	var musicFileLen = uint32(len(musicContent))
-
-	var musicSizePack Packet
-	musicSizePack.m_packetType = PacketMusicStreamSize
-	musicSizePack.m_dataSize = 4
-	binary.LittleEndian.PutUint32(musicSizePack.m_data[0:], musicFileLen)
-	SendPacket(conn, &musicSizePack)
-
-	fmt.Println("Sending music...")
-
-	var dataLoadMaxSize uint32 = 256 - (4 * 2)
-	var currentMusicPos uint32 = 0
-	for currentMusicPos < musicFileLen {
-		var dataSize = dataLoadMaxSize
-
-		if currentMusicPos+dataLoadMaxSize > musicFileLen {
-			dataSize = musicFileLen - currentMusicPos
-		}
-
-		var musicPack Packet
-		musicPack.m_packetType = PacketMusicStream
-		musicPack.m_dataSize = dataSize
-		copy(musicPack.m_data[0:musicPack.m_dataSize], musicContent[currentMusicPos:currentMusicPos+dataSize])
-		SendPacket(conn, &musicPack)
-		fmt.Print("*")
-		currentMusicPos += dataSize
-	}
-
-	fmt.Println("")
-	fmt.Println("All music has been sent!")
-}
-
-func handleServerConnection(c net.Conn) {
-	// we create a decoder that reads directly from the socket
-	d := json.NewDecoder(c)
-	var msg Command // TODO
-	err := d.Decode(&msg)
-	fmt.Println(msg, err)
-
-	c.Close()
 }
