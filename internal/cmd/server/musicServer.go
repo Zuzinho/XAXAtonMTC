@@ -13,11 +13,11 @@ import (
 const PORT = ":3017"
 
 type Command struct {
-	UserType string
-	UserID   int32
-	RoomID   int32
-	Command  string
-	Song     string
+	UserType string `json:"user_type,omitempty"`
+	UserID   int32  `json:"user_id,omitempty"`
+	RoomID   int32  `json:"room_id,omitempty"`
+	Command  string `json:"command,omitempty"`
+	Song     string `json:"song,omitempty"`
 }
 
 type room struct {
