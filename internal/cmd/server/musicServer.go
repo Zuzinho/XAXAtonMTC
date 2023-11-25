@@ -26,6 +26,7 @@ type room struct {
 	connections map[int32]net.Conn
 	songFiles   []os.DirEntry
 	m3u8        []byte
+	stop        chan struct{}
 }
 
 var listeners map[int32]room // map[RoomID]map[personalID]{address}
@@ -46,7 +47,7 @@ func main() {
 	}
 	defer l.Close()
 
-	go musicServer()
+	//go musicServer()
 
 	for {
 		c, err := l.Accept()
@@ -143,6 +144,7 @@ func CreateRoom(c net.Conn, cmd Command) {
 		song:      cmd.Song,
 		songFiles: songFiles,
 		m3u8:      m3u8,
+		stop:      make(chan struct{}),
 	}
 
 	c.Write(listeners[cmd.RoomID].m3u8)
@@ -163,25 +165,35 @@ func StartStream(cmd Command) {
 		connections: connections,
 	}
 
-	go func(map[int32]net.Conn) {
-		for {
+	go func(curRoom room) {
+		var nextChunk []byte
+		var err error
+		var name string
+
+	out:
+		for i := 0; i < len(curRoom.songFiles)-1; i++ { // do not send the last file - m3u8
 			select {
-			// select and channel to end stream
-			//case <-stop: break
+			case <-curRoom.stop: // stop stream and get out
+				break out
 			default:
-				// ToDo Stream data
-				for _, conn := range connections {
-					// TODO
-					conn.Write([]byte("NEXTCHUNK"))
-					// go conn.Write([]byte("NEXTCHUNK"))
+				name = curRoom.songFiles[i].Name()
+				nextChunk, err = ioutil.ReadFile(fmt.Sprintf("./songs/" + cmd.Song + "/" + name)) // b has type []byte
+				if err != nil {
+					log.Fatal(err)
+				}
+				for _, conn := range curRoom.connections {
+					conn.Write(nextChunk)
+					// go conn.Write(nextChunk)
+					// time.Sleep(time.Millisecond*100) // length of chunk
 				}
 			}
 		}
-
-	}(connections)
+	}(listeners[cmd.RoomID])
 }
 
 func StopStream(cmd Command) {
+	listeners[cmd.RoomID].stop <- struct{}{} // sending signal to stop transmitting
+	// closing connections ???
 	for _, conn := range listeners[cmd.RoomID].connections {
 		conn.Close()
 	}
