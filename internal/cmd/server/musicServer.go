@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 )
 
 const PORT = ":3017"
@@ -22,6 +23,7 @@ type room struct {
 	users       map[int32]string // map[personalID]{address}
 	song        string
 	connections map[int32]net.Conn
+	songFiles   []os.DirEntry
 }
 
 var listeners map[int32]room // map[RoomID]map[personalID]{address}
@@ -121,9 +123,18 @@ func CreateRoom(c net.Conn, cmd Command) {
 	// Creating room, and adding self
 	usersC := make(map[int32]string)
 	usersC[cmd.UserID] = fmt.Sprintf("%s", c.RemoteAddr().String())
+
+	songFiles, err := os.ReadDir(fmt.Sprintf("./songs/" + cmd.Song))
+	//entries, err := os.ReadDir("./songs/BachGavotteShort")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	listeners[cmd.RoomID] = room{
-		users: usersC,
-		song:  cmd.Song}
+		users:     usersC,
+		song:      cmd.Song,
+		songFiles: songFiles,
+	}
 }
 
 func StartStream(cmd Command) {
@@ -179,6 +190,9 @@ func musicServer() {
 	// serve and log errors
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))
 }
+
+// http://localhost:8080/BachGavotteShort/outputlist.m3u8
+// https://hlsjs-dev.video-dev.org/demo/
 
 // addHeaders will act as middleware to give us CORS support
 func addHeaders(h http.Handler) http.HandlerFunc {
