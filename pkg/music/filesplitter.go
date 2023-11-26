@@ -21,7 +21,7 @@ type FileSplitter struct {
 }
 
 func NewFileSplitter(songName, authorName string) (*FileSplitter, error) {
-	file, err := os.Open(fmt.Sprintf("%s - %s.mp3", authorName, songName))
+	file, err := os.Open(musicPath + fmt.Sprintf("%s - %s.mp3", authorName, songName))
 	if err != nil {
 		return nil, err
 	}
