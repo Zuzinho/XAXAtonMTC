@@ -45,7 +45,7 @@ func (handler *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	handler.phoneNumber = loginForm.PhoneNumber
 
-	handler.smsCode = "12312"
+	handler.smsCode = generateRandomCode()
 	err = handler.smsSender.SendSms(handler.phoneNumber, handler.smsCode)
 	if err != nil {
 		handlers.HttpJSONErr(w, err, http.StatusInternalServerError)
@@ -75,9 +75,7 @@ func (handler *Handler) CheckSms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var u *user.User
-
-	u, err = handler.usersRepo.SelectByPhoneNumber(handler.phoneNumber)
+	u, err := handler.usersRepo.SelectByPhoneNumber(handler.phoneNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
 		userID, err := handler.usersRepo.Insert(handler.phoneNumber)
 		if err != nil {
