@@ -4,6 +4,7 @@ import (
 	"XAXAtonMTC/pkg/packetsender"
 	"encoding/json"
 	"github.com/gorilla/websocket"
+	"log"
 	"net/http"
 	"os"
 )
@@ -36,8 +37,15 @@ func (sender *Sender) SendPacket(packet *packetsender.Packet) error {
 		return NoWebsocketConnectionErr
 	}
 
+	log.Println("sending ", packet, " packet")
+
 	w, err := sender.wsConn.NextWriter(websocket.BinaryMessage)
-	defer w.Close()
+	defer func() {
+		log.Println(w, sender)
+		if w != nil {
+			w.Close()
+		}
+	}()
 	if err != nil {
 		return err
 	}
