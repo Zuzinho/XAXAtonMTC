@@ -25,7 +25,7 @@ func (repo *SongsDBRepository) SelectByID(songID uint32) (*Song, error) {
 
 	var authorName, musicName string
 
-	err = conn.QueryRow("select author_name, music_name from music where music_id = $1", songID).
+	err = conn.QueryRow("select author_name, song_name from music where song_id = $1", songID).
 		Scan(&authorName, &musicName)
 	if err != nil {
 		return nil, err
