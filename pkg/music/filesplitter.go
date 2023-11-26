@@ -3,6 +3,7 @@ package music
 import (
 	"XAXAtonMTC/pkg/packetsender"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -19,8 +20,8 @@ type FileSplitter struct {
 	offset   int
 }
 
-func NewFileSplitter(musicName, authorName string) (*FileSplitter, error) {
-	file, err := os.Open(musicPath + musicName)
+func NewFileSplitter(songName, authorName string) (*FileSplitter, error) {
+	file, err := os.Open(fmt.Sprintf("%s - %s.mp3", authorName, songName))
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +36,7 @@ func NewFileSplitter(musicName, authorName string) (*FileSplitter, error) {
 		MusicName  string `json:"music_name"`
 	}{
 		AuthorName: authorName,
-		MusicName:  musicName,
+		MusicName:  songName,
 	})
 	if err != nil {
 		return nil, err
