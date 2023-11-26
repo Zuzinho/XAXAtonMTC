@@ -46,7 +46,12 @@ func (repo *SendersMemoryRepository) SendPacket(usersID []uint32, check func(uin
 				return
 			}
 
-			err := repo.senders[userID].SendPacket(packet)
+			sender, ok := repo.senders[userID]
+			if !ok {
+				return
+			}
+
+			err := sender.SendPacket(packet)
 			if err != nil {
 				log.Println(err)
 			}
